@@ -12,12 +12,43 @@ public class AdministradorServico : IAdministradorServico
     {
         _contexto = contexto;
     }
+    public List<Administrador>? Todos(int? pagina = 1)
+    {
+        var query = _contexto.Administradores.AsQueryable();
+        int itensPorPagina = 10;
+
+        // var total = query.Count();
+        // var paginasTotais = (int)Math.Ceiling(total / (double)itensPorPagina);
+
+        // var resultado = query
+        // .Skip(((int)pagina - 1) * itensPorPagina)
+        // .Take(itensPorPagina)
+        // .ToList();
+        if (pagina != null)
+        {
+            query = query
+            .Skip(((int)pagina - 1) * itensPorPagina)
+            .Take(itensPorPagina);
+        }
+
+        return query.ToList();
+    }
+    public Administrador Incluir(Administrador administrador)
+    {
+        _contexto.Administradores.Add(administrador);
+        _contexto.SaveChanges();
+
+        return administrador;
+    }
     public Administrador? Login(LoginDTO loginDTO)
     {
-        var adm = _contexto.Admnistradores.FirstOrDefault(a => a.Email == loginDTO.Email && a.Senha == loginDTO.Senha);
-        if (adm == null)
-            return null;
+        var adm = _contexto.Administradores.FirstOrDefault(a => a.Email == loginDTO.Email && a.Senha == loginDTO.Senha);
+        return adm;
+    }
 
-        return adm;        
-    }    
+    public Administrador? BuscarPorId(int id)
+    {
+        var administrador = _contexto.Administradores.Find(id);
+        return administrador;
+    }
 }

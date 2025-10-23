@@ -46,7 +46,7 @@ namespace Minimal_Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Administradores", (string)null);
+                    b.ToTable("Administradores");
 
                     b.HasData(
                         new
@@ -81,7 +81,7 @@ namespace Minimal_Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Veiculos", (string)null);
+                    b.ToTable("Veiculos");
                 });
 #pragma warning restore 612, 618
         }

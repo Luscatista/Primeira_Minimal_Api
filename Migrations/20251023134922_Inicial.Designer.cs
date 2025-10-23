@@ -11,8 +11,8 @@ using Minimal_Api.Infraestrutura.Db;
 namespace Minimal_Api.Migrations
 {
     [DbContext(typeof(DbContexto))]
-    [Migration("20251016195400_AdministradorMigration")]
-    partial class AdministradorMigration
+    [Migration("20251023134922_Inicial")]
+    partial class Inicial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -49,7 +49,42 @@ namespace Minimal_Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Admnistradores");
+                    b.ToTable("Administradores");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Email = "administrador@teste.com",
+                            Perfil = "Adm",
+                            Senha = "123456"
+                        });
+                });
+
+            modelBuilder.Entity("Minimal_Api.Dominio.Entidades.Veiculo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Ano")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Marca")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("Modelo")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Veiculos");
                 });
 #pragma warning restore 612, 618
         }
