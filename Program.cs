@@ -1,6 +1,12 @@
+using System.ComponentModel.DataAnnotations;
+using System.IdentityModel.Tokens.Jwt;
 using System.Reflection.Metadata.Ecma335;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Minimal_Api.Dominio.Entidades;
 using Minimal_Api.Dominio.Enums;
 using Minimal_Api.Dominio.Interfaces;
@@ -10,8 +16,25 @@ using Minimal_Api.DTOs;
 using Minimal_Api.Infraestrutura.Db;
 
 #region Builder
+
 var builder = WebApplication.CreateBuilder(args);
 
+var key = builder.Configuration.GetSection("Jwt").ToString();
+if (string.IsNullOrEmpty(key)) key = "123456";
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateLifetime = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key))
+    };
+});
+
+builder.Services.AddAuthorization();
 builder.Services.AddScoped<IAdministradorServico, AdministradorServico>();
 builder.Services.AddScoped<IVeiculoServico, VeiculoServico>();
 
@@ -21,10 +44,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<DbContexto>(options =>
 {
     options.UseMySql(
-    builder.Configuration.GetConnectionString("mysql"),
-    ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("mysql"))
+    builder.Configuration.GetConnectionString("Mysql"),
+    ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("Mysql"))
     );
 });
+
 #endregion
 
 #region App
@@ -36,35 +60,74 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/swagger/v1/swagger.json", "v1");
     options.RoutePrefix = string.Empty;
 });
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 #endregion
 
 #region Administradores
 
+string GerarTokenJwt(Administrador administrador)
+{
+    if (string.IsNullOrEmpty(key)) return string.Empty;
+
+    var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+    var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+    var claims = new List<Claim>()
+    {
+        new Claim("Email", administrador.Email),
+        new Claim("Perfil", administrador.Perfil),
+    };
+
+    var token = new JwtSecurityToken(
+        claims: claims,
+        expires: DateTime.Now.AddDays(1),
+        signingCredentials: credentials
+    );
+
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
 app.MapPost("/administradores/login", ([FromBody] LoginDTO loginDTO, IAdministradorServico administradorServico) =>
 {
-    if (administradorServico.Login(loginDTO) != null)
-        return Results.Ok("Login realizado com sucesso");
+    var adm = administradorServico.Login(loginDTO);
+    if (adm != null)
+    {
+        string token = GerarTokenJwt(adm);
+
+        return Results.Ok(new AdministradorLogado
+        {
+            Email = adm.Email,
+            Perfil = adm.Perfil,
+            Token = token
+        });
+    }        
     else
         return Results.Unauthorized();
 }).WithTags("Administradores");
 
 app.MapGet("/administradores", ([FromQuery] int? pagina, IAdministradorServico administradorServico) =>
 {
-    // var adms = new List<Administrador>();
-    // var administradores = administradorServico.Todos(pagina);
+    var admsViewModel = new List<AdministradorViewModel>();
+    var adms = administradorServico.Todos(pagina);
 
-    // foreach(var adm in administradores)
-    // {
-    //     adms.Add(new Administrador
-    //     {
-    //         Id = adm.Id,
-    //         Email = adm.Email,
-    //         Senha = adm.Senha,
-    //         Perfil = adm.Perfil
-    //     });
-    // }
-    return Results.Ok(administradorServico.Todos(pagina));
-}).WithTags("Administradores");
+    if (adms != null)
+    {
+        foreach (var adm in adms)
+        {
+            admsViewModel.Add(new AdministradorViewModel
+            {
+                Id = adm.Id,
+                Email = adm.Email,
+                Perfil = adm.Perfil
+            });
+        }
+    }
+    
+    return Results.Ok(admsViewModel);
+}).RequireAuthorization().WithTags("Administradores");
 
 app.MapGet("/adminitradores/{id}", ([FromQuery] int id, IAdministradorServico administradorServico) =>
 {
@@ -73,8 +136,15 @@ app.MapGet("/adminitradores/{id}", ([FromQuery] int id, IAdministradorServico ad
     if (administrador == null)
         return Results.NotFound();
 
-    return Results.Ok(administrador);
-}).WithTags("Administradores");
+    var AdmViewModel = new AdministradorViewModel
+    {
+        Id = administrador.Id,
+        Email = administrador.Email,
+        Perfil = administrador.Perfil
+    };
+
+    return Results.Ok(AdmViewModel);
+}).RequireAuthorization().WithTags("Administradores");
 
 app.MapPost("/administradores", ([FromBody] AdministradorDTO administradorDTO, IAdministradorServico administradorServico) =>
 {
@@ -104,9 +174,16 @@ app.MapPost("/administradores", ([FromBody] AdministradorDTO administradorDTO, I
 
     administradorServico.Incluir(administrador);
 
-    return Results.Created($"/administrador/{administrador.Id}", administrador);
+    var AdmViewModel = new AdministradorViewModel
+    {
+        Id = administrador.Id,
+        Email = administrador.Email,
+        Perfil = administrador.Perfil
+    };
 
-}).WithTags("Administradores");
+    return Results.Created($"/administrador/{AdmViewModel.Id}", AdmViewModel);
+
+}).RequireAuthorization().WithTags("Administradores");
 
 #endregion
 
@@ -147,12 +224,12 @@ app.MapPost("/veiculos", ([FromBody] VeiculoDTO veiculoDTO, IVeiculoServico veic
     veiculoServico.Incluir(veiculo);
 
     return Results.Created($"/veiculo/{veiculo.Id}", veiculo);
-}).WithTags("Veículos");
+}).RequireAuthorization().WithTags("Veículos");
 
 app.MapGet("/veiculos", ([FromQuery] int? pagina, IVeiculoServico veiculoServico) =>
 {
     return Results.Ok(veiculoServico.Todos(pagina));
-}).WithTags("Veículos");
+}).RequireAuthorization().WithTags("Veículos");
 
 app.MapGet("/veiculos/{id}", ([FromQuery] int id, IVeiculoServico veiculoServico) =>
 {
@@ -162,7 +239,7 @@ app.MapGet("/veiculos/{id}", ([FromQuery] int id, IVeiculoServico veiculoServico
         return Results.NotFound();
 
     return Results.Ok(veiculo);
-}).WithTags("Veículos");
+}).RequireAuthorization().WithTags("Veículos");
 
 app.MapPut("/veiculos/{id}", ([FromQuery] int id, VeiculoDTO veiculoDTO, IVeiculoServico veiculoServico) =>
 {   
@@ -181,7 +258,7 @@ app.MapPut("/veiculos/{id}", ([FromQuery] int id, VeiculoDTO veiculoDTO, IVeicul
     veiculoServico.Atualizar(veiculo);
 
     return Results.Ok(veiculo);
-}).WithTags("Veículos");
+}).RequireAuthorization().WithTags("Veículos");
 
 app.MapDelete("/veiculos/{id}", ([FromQuery] int id, IVeiculoServico veiculoServico) => {
 
@@ -192,7 +269,7 @@ app.MapDelete("/veiculos/{id}", ([FromQuery] int id, IVeiculoServico veiculoServ
     veiculoServico.Apagar(veiculo);
 
     return Results.NoContent();
-}).WithTags("Veículos");
+}).RequireAuthorization().WithTags("Veículos");
 #endregion
 
 app.Run();
